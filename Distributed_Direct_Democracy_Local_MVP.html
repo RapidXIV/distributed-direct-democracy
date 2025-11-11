@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Distributed Direct Democracy — Local MVP</title>
+<style>
+  :root{
+    --bg:#0b0d12;--card:#121623;--muted:#9aa3b2;--text:#e6ecf5;--accent:#7cc4ff;--good:#3fd37e;--bad:#ff6b6b;--line:#22283a;--yellow:#ffd166;
+  }
+  *{box-sizing:border-box;font-family:Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif}
+  body{margin:0;background:linear-gradient(180deg,#0a0c12 0%,#0b1020 100%);color:var(--text)}
+  .wrap{max-width:1100px;margin:24px auto;padding:0 16px}
+  .title{font-weight:800;font-size:28px;letter-spacing:0.3px}
+  .sub{color:var(--muted);font-size:14px;margin-top:4px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px}
+  .row{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+  .grid{display:grid;gap:16px}
+  .grid-cols-3{grid-template-columns:1.2fr 1fr 1fr}
+  .btn{border:1px solid var(--line);background:#0f1422;color:var(--text);padding:10px 14px;border-radius:12px;cursor:pointer}
+  .btn:hover{border-color:#2a3250}
+  .btn-accent{background:linear-gradient(180deg,#162847,#0f1b34);border-color:#2a3b64}
+  .btn-good{background:#103321;border-color:#1f6b46}
+  .btn-bad{background:#391a1a;border-color:#6b1f1f}
+  input[type=text], textarea, select{
+    width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--line);
+    background:#0d1221;color:var(--text);outline:none
+  }
+  textarea{min-height:90px;resize:vertical}
+  .muted{color:var(--muted)}
+  .tag{font-size:12px;color:#b8c3d9;background:#0e172b;border:1px solid #213258;padding:4px 8px;border-radius:999px}
+  .pill{font-size:12px;padding:4px 8px;border-radius:999px;border:1px solid var(--line);}
+  .pill-good{color:var(--good);border-color:#1f6b46}
+  .pill-bad{color:var(--bad);border-color:#6b1f1f}
+  .list{display:flex;flex-direction:column;gap:12px}
+  .s-card{background:#0f1424;border:1px solid var(--line);border-radius:14px;padding:12px;display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center}
+  .score{font-weight:800;font-size:20px;min-width:48px;text-align:center}
+  .title-sm{font-weight:700}
+  .small{font-size:12px}
+  .sep{height:1px;background:var(--line);margin:16px 0}
+  .kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;background:#0b1220;border:1px solid #23304d;border-radius:8px;padding:2px 6px;font-size:12px;color:#bcd3ff}
+  .aud{white-space:pre-wrap;background:#0c1222;border:1px solid #223057;border-radius:12px;padding:10px;max-height:220px;overflow:auto}
+  .link{color:var(--accent);text-decoration:none}
+  .flex{display:flex}
+  .space{justify-content:space-between;align-items:center}
+  .right{margin-left:auto}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="row space">
+      <div>
+        <div class="title">Distributed Direct Democracy — Local MVP</div>
+        <div class="sub">Prototype that runs entirely in your browser. Data is stored in <span class="kbd">localStorage</span>. No server. No signup.</div>
+      </div>
+      <div class="row">
+        <button id="exportBtn" class="btn">Export JSON</button>
+        <label class="btn" for="importFile">Import JSON<input id="importFile" type="file" accept="application/json" style="display:none"></label>
+        <button id="resetBtn" class="btn" title="Clear local data">Reset</button>
+      </div>
+    </div>
+
+    <div class="sep"></div>
+
+    <div class="grid grid-cols-3">
+      <!-- Submit -->
+      <div class="card">
+        <div class="title-sm">What should we do?</div>
+        <div class="muted small" style="margin-bottom:8px">Write a concrete action. Clear, specific, constructive.</div>
+        <textarea id="ideaText" placeholder="e.g., Build open EV chargers on every interstate exit; fund via highway toll swap; publish uptime SLAs."></textarea>
+        <div class="row" style="margin-top:8px">
+          <select id="clusterMode" title="Similarity mode">
+            <option value="auto">Auto-merge (recommended)</option>
+            <option value="new">Force new sentiment</option>
+          </select>
+          <button id="submitBtn" class="btn btn-accent right">Submit</button>
+        </div>
+        <div class="muted small" style="margin-top:8px">Merging uses local TF‑IDF + cosine. Threshold <span class="kbd">0.50</span>. Tunable in settings.</div>
+      </div>
+
+      <!-- Top sentiments -->
+      <div class="card">
+        <div class="row space">
+          <div class="title-sm">Top Sentiments</div>
+          <select id="sortBy">
+            <option value="score">Score</option>
+            <option value="recent">Recent</option>
+            <option value="momentum">Momentum</option>
+          </select>
+        </div>
+        <div class="list" id="sentimentList"></div>
+      </div>
+
+      <!-- Transparency -->
+      <div class="card">
+        <div class="row space">
+          <div class="title-sm">Transparency</div>
+          <button id="reclusterBtn" class="btn small">Re-cluster</button>
+        </div>
+        <div class="small muted" style="margin-bottom:8px">Every action is logged. You can export and inspect it.</div>
+        <div id="auditLog" class="aud small"></div>
+        <div class="row" style="margin-top:8px">
+          <span class="tag">one-human-one-account (soft)</span>
+          <span class="tag">open algorithms</span>
+          <span class="tag">local-first</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="sep"></div>
+
+    <div class="card">
+      <div class="title-sm">How it works (local)</div>
+      <ol class="small muted">
+        <li>We keep a corpus of all submissions. Build a TF‑IDF vocabulary. Each submission becomes a sparse vector.</li>
+        <li>Each sentiment has a centroid (mean vector). On submit, we compute cosine similarity to each centroid.</li>
+        <li>If best similarity ≥ threshold, we merge; else we create a new sentiment.</li>
+        <li>Score = (up - down) × log10(1 + members) × freshness_decay (half‑life 72h).</li>
+        <li>No network calls. Everything is auditable via the log + JSON export.</li>
+      </ol>
+    </div>
+
+  </div>
+
+<script>
+/** =============== Local MVP Store =============== */
+const KEY = "ddd_local_mvp_v1";
+
+let state = loadState() || {
+  users: {}, // soft-unique by browser; single user id
+  submissions: [], // {id, userId, text, ts}
+  sentiments: [],  // {id, title, summary, memberIds:[], centroid: {}, up:0, down:0, created}
+  votes: {},       // sentimentId -> {userId: weight}
+  vocab: {},       // term -> index
+  idf: [],         // idf array by index
+  settings: {threshold: 0.50, halfLifeHrs: 72}
+};
+
+const userId = getOrCreateUserId();
+log("system","init", {userId, totals: {submissions: state.submissions.length, sentiments: state.sentiments.length}});
+render();
+
+/** =============== Utils =============== */
+function save(){ localStorage.setItem(KEY, JSON.stringify(state)); }
+function loadState(){
+  try{ return JSON.parse(localStorage.getItem(KEY)); }catch(e){ return null; }
+}
+function uid(prefix="id"){ return prefix + "_" + Math.random().toString(36).slice(2,10) + Date.now().toString(36); }
+function now(){ return Date.now(); }
+function fmtTime(ts){
+  const d = new Date(ts);
+  return d.toLocaleString();
+}
+function log(actor, action, details){
+  const entry = `[${new Date().toISOString()}] ${actor} :: ${action}${details? " :: " + JSON.stringify(details):""}`;
+  const el = document.getElementById("auditLog");
+  el.textContent = (entry + "\n" + el.textContent).slice(0, 40000);
+}
+function tokenize(text){
+  return text.toLowerCase().replace(/[^a-z0-9\s']/g," ").split(/\s+/).filter(w => w.length>1 && !STOP.has(w));
+}
+const STOP = new Set("a an the and or but if then so of for to in on with by is are was were be been being have has had do does did not no from at as it that this these those which who whom whose you your our their we us them they he she i me my mine".split(/\s+/));
+
+/** =============== TF‑IDF =============== */
+function rebuildVocabAndIdf(){
+  const docCount = state.submissions.length || 1;
+  state.vocab = {};
+  const df = {}; // term -> doc frequency
+  let idx = 0;
+  for(const sub of state.submissions){
+    const terms = new Set(tokenize(sub.text));
+    for(const t of terms){
+      if(!(t in state.vocab)) state.vocab[t] = idx++;
+      df[t] = (df[t]||0) + 1;
+    }
+  }
+  state.idf = new Array(Object.keys(state.vocab).length).fill(0);
+  for(const [t,i] of Object.entries(state.vocab)){
+    state.idf[i] = Math.log((1 + docCount) / (1 + (df[t]||0))) + 1;
+  }
+}
+function vectorize(text){
+  const vec = {};
+  const tokens = tokenize(text);
+  if(tokens.length===0) return vec;
+  const tf = {};
+  for(const t of tokens){
+    if(!(t in state.vocab)) continue;
+    const i = state.vocab[t];
+    tf[i] = (tf[i]||0) + 1;
+  }
+  const maxTF = Math.max(1, ...Object.values(tf));
+  for(const [i,count] of Object.entries(tf)){
+    const id = Number(i);
+    vec[id] = (0.5 + 0.5 * (count/maxTF)) * (state.idf[id] || 0); // normalized tf * idf
+  }
+  return normalize(vec);
+}
+function normalize(vec){
+  let sumsq = 0;
+  for(const v of Object.values(vec)) sumsq += v*v;
+  const norm = Math.sqrt(sumsq) || 1;
+  const out = {};
+  for(const [i,v] of Object.entries(vec)) out[i]= v/norm;
+  return out;
+}
+function centroidOf(memberVecs){
+  if(memberVecs.length===0) return {};
+  const acc = {};
+  for(const v of memberVecs){
+    for(const [i,val] of Object.entries(v)){
+      acc[i] = (acc[i]||0) + val;
+    }
+  }
+  for(const i of Object.keys(acc)){
+    acc[i] /= memberVecs.length;
+  }
+  return normalize(acc);
+}
+function cosine(a,b){
+  let s = 0;
+  const keys = Object.keys(a);
+  for(const k of keys){
+    if(k in b) s += a[k]*b[k];
+  }
+  return s;
+}
+
+/** =============== Scores =============== */
+function freshnessDecay(ts, halfLifeHrs){
+  const ageHrs = (now() - ts)/ (1000*60*60);
+  const k = Math.pow(0.5, ageHrs/halfLifeHrs);
+  return k;
+}
+function sentimentScore(s){
+  const members = s.memberIds.length;
+  const base = (s.up - s.down);
+  const breadth = Math.log10(1 + members);
+  const fresh = freshnessDecay(s.created, state.settings.halfLifeHrs);
+  return base * Math.max(0.5, breadth) * fresh;
+}
+
+/** =============== User =============== */
+function getOrCreateUserId(){
+  try {
+    const u = localStorage.getItem(KEY+"_user");
+    if(u) return u;
+    const id = uid("user");
+    localStorage.setItem(KEY+"_user", id);
+    return id;
+  }catch(e){
+    return "anon";
+  }
+}
+
+/** =============== Core Ops =============== */
+function addSubmission(text, forceNew=false){
+  const sub = {id: uid("sub"), userId, text, ts: now()};
+  state.submissions.push(sub);
+
+  // Update vocab/idf and vectorize
+  rebuildVocabAndIdf();
+  const v = vectorize(text);
+
+  // Find best sentiment
+  let best = {id:null, sim: -1};
+  for(const s of state.sentiments){
+    const sim = cosine(s.centroid, v);
+    if(sim > best.sim) best = {id: s.id, sim};
+  }
+  if(!forceNew && best.id && best.sim >= state.settings.threshold){
+    // merge
+    const s = state.sentiments.find(x=>x.id===best.id);
+    s.memberIds.push(sub.id);
+    s.centroid = centroidOf(s.memberIds.map(id => vectorize(state.submissions.find(z=>z.id===id).text)));
+    s.summary = summarize(s);
+    log("system","merge",{submission: sub.id, into: s.id, sim: Number(best.sim.toFixed(3))});
+  } else {
+    // create new sentiment
+    const sentiment = {
+      id: uid("sent"),
+      title: makeTitle(text),
+      summary: text.length > 140 ? text.slice(0,140)+"…" : text,
+      memberIds: [sub.id],
+      centroid: v,
+      up:0, down:0,
+      created: now()
+    };
+    state.sentiments.push(sentiment);
+    log("system","new_sentiment",{sentiment: sentiment.id, from: sub.id});
+  }
+  save();
+  render();
+}
+
+function makeTitle(text){
+  // crude title: first 80 chars, sentence-ish
+  const t = text.trim().replace(/\s+/g," ");
+  return (t.length>80 ? t.slice(0,80)+"…" : t);
+}
+
+function summarize(s){
+  // simple extractive: choose the most representative member (closest to centroid)
+  let best = {id:null, sim:-1, text:""};
+  for(const id of s.memberIds){
+    const sub = state.submissions.find(x=>x.id===id);
+    const sim = cosine(s.centroid, vectorize(sub.text));
+    if(sim>best.sim){best={id, sim, text: sub.text};}
+  }
+  const t = best.text || "";
+  return t.length>160 ? t.slice(0,160)+"…" : t;
+}
+
+function vote(sentId, weight){
+  const key = sentId + "::" + userId;
+  state.votes[key] = weight;
+  const s = state.sentiments.find(x=>x.id===sentId);
+  // recompute tallies from votes
+  let up=0, down=0;
+  for(const [k,w] of Object.entries(state.votes)){
+    const [sid, uid_] = k.split("::");
+    if(sid===sentId){
+      if(w>0) up++; else if(w<0) down++;
+    }
+  }
+  s.up = up; s.down = down;
+  log("user","vote",{sentiment: sentId, weight});
+  save(); render();
+}
+
+function recluster(){
+  // Build vectors for all submissions
+  rebuildVocabAndIdf();
+  const vecs = new Map();
+  for(const sub of state.submissions){
+    vecs.set(sub.id, vectorize(sub.text));
+  }
+  // Greedy clustering
+  const threshold = state.settings.threshold;
+  const clusters = [];
+  for(const sub of state.submissions){
+    const v = vecs.get(sub.id);
+    let best = {idx:-1, sim:-1};
+    for(let i=0;i<clusters.length;i++){
+      const c = clusters[i];
+      const sim = cosine(c.centroid, v);
+      if(sim>best.sim){best={idx:i, sim};}
+    }
+    if(best.idx>=0 && best.sim>=threshold){
+      clusters[best.idx].members.push(sub.id);
+      // recompute centroid
+      const memberVecs = clusters[best.idx].members.map(id => vecs.get(id));
+      clusters[best.idx].centroid = centroidOf(memberVecs);
+    }else{
+      clusters.push({members:[sub.id], centroid: v});
+    }
+  }
+  // Write back sentiments preserving votes by textual hash
+  const old = state.sentiments;
+  state.sentiments = clusters.map((c, i)=>{
+    const text0 = state.submissions.find(x=>x.id===c.members[0]).text;
+    // Attempt to map to previous sentiment by best overlap
+    let up=0,down=0;
+    let title = makeTitle(text0);
+    const sObj = {id: uid("sent"), title, summary: text0.length>160? text0.slice(0,160)+"…":text0, memberIds:[...c.members], centroid:c.centroid, up, down, created: now()};
+    return sObj;
+  });
+  log("system","recluster",{clusters: state.sentiments.length});
+  save(); render();
+}
+
+/** =============== UI =============== */
+function render(){
+  // list
+  const sort = document.getElementById("sortBy").value;
+  const listEl = document.getElementById("sentimentList");
+  listEl.innerHTML="";
+  const sentiments = [...state.sentiments];
+  if(sort==="score"){
+    sentiments.sort((a,b)=> sentimentScore(b)-sentimentScore(a));
+  }else if(sort==="recent"){
+    sentiments.sort((a,b)=> b.created - a.created);
+  }else{
+    // momentum ~ score / age
+    sentiments.sort((a,b)=> (sentimentScore(b)/Math.max(1,(now()-b.created))) - (sentimentScore(a)/Math.max(1,(now()-a.created))));
+  }
+  for(const s of sentiments){
+    const card = document.createElement("div");
+    card.className="s-card";
+    const score = document.createElement("div");
+    score.className="score";
+    score.textContent = (s.up - s.down);
+    const mid = document.createElement("div");
+    const title = document.createElement("div");
+    title.className="title-sm";
+    title.textContent = s.title;
+    const meta = document.createElement("div");
+    meta.className="small muted";
+    meta.textContent = `${s.memberIds.length} member${s.memberIds.length!==1?"s":""} • ${fmtTime(s.created)}`;
+    const sum = document.createElement("div");
+    sum.className="small";
+    sum.textContent = s.summary || "";
+    mid.appendChild(title); mid.appendChild(meta); mid.appendChild(sum);
+    const actions = document.createElement("div");
+    const upBtn = document.createElement("button");
+    upBtn.className="btn btn-good small"; upBtn.textContent="▲";
+    upBtn.onclick=()=>vote(s.id, 1);
+    const downBtn = document.createElement("button");
+    downBtn.className="btn btn-bad small"; downBtn.textContent="▼";
+    downBtn.style.marginLeft="6px";
+    downBtn.onclick=()=>vote(s.id, -1);
+    actions.appendChild(upBtn); actions.appendChild(downBtn);
+    card.appendChild(score); card.appendChild(mid); card.appendChild(actions);
+    // expand details (members)
+    card.onclick = (e)=>{
+      if(e.target===upBtn || e.target===downBtn) return;
+      const exists = card.querySelector(".members");
+      if(exists){ exists.remove(); return; }
+      const mem = document.createElement("div");
+      mem.className="members small muted";
+      mem.style.gridColumn="1 / -1";
+      const bullets = state.submissions
+        .filter(x=>s.memberIds.includes(x.id))
+        .map(x=>`• ${x.text}`)
+        .join("\n");
+      mem.textContent = bullets || "No members found.";
+      card.appendChild(mem);
+    };
+    listEl.appendChild(card);
+  }
+}
+
+/** =============== Events =============== */
+document.getElementById("submitBtn").onclick = ()=>{
+  const text = document.getElementById("ideaText").value.trim();
+  if(!text){ alert("Please enter an idea."); return; }
+  const mode = document.getElementById("clusterMode").value;
+  addSubmission(text, mode==="new");
+  document.getElementById("ideaText").value="";
+};
+document.getElementById("sortBy").onchange = render;
+
+document.getElementById("exportBtn").onclick = ()=>{
+  const blob = new Blob([JSON.stringify(state,null,2)], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "ddd_local_export.json";
+  a.click();
+  URL.revokeObjectURL(url);
+  log("system","export",{items: {submissions: state.submissions.length, sentiments: state.sentiments.length}});
+};
+
+document.getElementById("importFile").onchange = (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const obj = JSON.parse(reader.result);
+      state = obj;
+      save(); render();
+      log("system","import",{ok:true, sentiments: state.sentiments.length});
+    } catch (err){
+      alert("Invalid JSON.");
+      log("system","import",{ok:false, error: String(err)});
+    }
+  };
+  reader.readAsText(file);
+};
+
+document.getElementById("resetBtn").onclick = ()=>{
+  if(confirm("Clear all local data? This cannot be undone.")){
+    localStorage.removeItem(KEY);
+    localStorage.removeItem(KEY+"_user");
+    location.reload();
+  }
+};
+
+document.getElementById("reclusterBtn").onclick = ()=>{
+  recluster();
+};
+
+/** =============== Seed (optional) =============== */
+if(state.submissions.length===0){
+  const seeds = [
+    "Mandate open financial disclosures for political ads across all platforms within 24 hours.",
+    "Build a national network of open EV chargers at every interstate exit; fund via congestion pricing offsets.",
+    "Create a universal civic ID with privacy by design: passkeys + zero-knowledge uniqueness, no location tracking.",
+    "Publish police use‑of‑force and traffic stop datasets in real‑time, standardized across states.",
+    "Launch a national AI literacy program: free micro‑courses, verified certificates for digital civics."
+  ];
+  for(const s of seeds) addSubmission(s, true);
+  log("system","seed",{count: seeds.length});
+}
+</script>
+</body>
+</html>
